@@ -3,9 +3,10 @@ package postgresql
 import (
 	"context"
 	"fmt"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -286,9 +287,16 @@ func getRDSAuthToken(region string, profile string, role string, username string
 	return token, err
 }
 
-func createGoogleCredsFileIfNeeded() error {
+func initGoogleCreds() error {
 	if _, err := google.FindDefaultCredentials(context.Background()); err == nil {
 		return nil
+	}
+
+	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS_JSON")
+	if googleCredentialsJson != "" {
+		if _, err := google.CredentialsFromJSON(context.Background(), []byte(googleCredentialsJson)); err == nil {
+			return nil
+		}
 	}
 
 	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
@@ -395,7 +403,7 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 	}
 
 	if config.Scheme == "gcppostgres" {
-		if err := createGoogleCredsFileIfNeeded(); err != nil {
+		if err := initGoogleCreds(); err != nil {
 			return nil, err
 		}
 	}
