@@ -3,7 +3,6 @@ package postgresql
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -14,7 +13,6 @@ import (
 	"github.com/blang/semver"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
-	"golang.org/x/oauth2/google"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -287,39 +285,6 @@ func getRDSAuthToken(region string, profile string, role string, username string
 	return token, err
 }
 
-func initGoogleCreds() error {
-	fmt.Println("Starting")
-	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS_JSON")
-	fmt.Println("rawGoogleCredentials:", googleCredentialsJson)
-	if googleCredentialsJson != "" {
-		if _, err := google.CredentialsFromJSON(context.Background(), []byte(googleCredentialsJson)); err == nil {
-			return nil
-		}
-	}
-
-	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
-	fmt.Println("rawGoogleCredentials:", rawGoogleCredentials)
-	if rawGoogleCredentials == "" {
-		return nil
-	}
-
-	tmpFile, err := os.CreateTemp("", "")
-	if err != nil {
-		return fmt.Errorf("could not create temporary file: %w", err)
-	}
-	defer tmpFile.Close()
-
-	fmt.Println("Temporary file created at:", tmpFile.Name())
-
-	_, err = tmpFile.WriteString(rawGoogleCredentials)
-	if err != nil {
-		return fmt.Errorf("could not write in temporary file: %w", err)
-	}
-
-	fmt.Println("Returning")
-	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
-}
-
 func acquireAzureOauthToken(tenantId string) (string, error) {
 	credential, err := azidentity.NewDefaultAzureCredential(
 		&azidentity.DefaultAzureCredentialOptions{TenantID: tenantId})
@@ -401,12 +366,6 @@ func providerConfigure(d *schema.ResourceData) (interface{}, error) {
 				KeyPath:         spec["key"].(string),
 				SSLInline:       spec["sslinline"].(bool),
 			}
-		}
-	}
-
-	if config.Scheme == "gcppostgres" {
-		if err := initGoogleCreds(); err != nil {
-			return nil, err
 		}
 	}
 

@@ -293,12 +293,10 @@ func (c *Client) Connect() (*DBConnection, error) {
 		var err error
 		if c.config.Scheme == "postgres" {
 			db, err = sql.Open(proxyDriverName, dsn)
-		} else if c.config.Scheme == "gcppostgres" {
-			if c.config.GCPIAMImpersonateServiceAccount != "" {
-				db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
-			} else {
-				db, err = openGCPDBConnectionWithCredentials(context.Background(), dsn)
-			}
+		} else if c.config.Scheme == "gcppostgres" && c.config.GCPIAMImpersonateServiceAccount != "" {
+			db, err = openImpersonatedGCPDBConnection(context.Background(), dsn, c.config.GCPIAMImpersonateServiceAccount)
+		} else if c.config.Scheme == "gcppostgres" && os.Getenv("GOOGLE_CREDENTIALS") != "" {
+			db, err = openGCPDBConnectionWithCredentials(context.Background(), dsn)
 		} else {
 			db, err = postgres.Open(context.Background(), dsn)
 		}
@@ -387,28 +385,23 @@ func openImpersonatedGCPDBConnection(ctx context.Context, dsn string, targetServ
 }
 
 func openGCPDBConnectionWithCredentials(ctx context.Context, dsn string) (*sql.DB, error) {
-	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS_JSON")
+	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS")
 	creds, err := google.CredentialsFromJSON(ctx, []byte(googleCredentialsJson), "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Google credentials JSON: %w", err)
 	}
 
-	fmt.Println("openGCPDBConnectionWithCredentials - something")
 	client, err := gcp.NewHTTPClient(gcp.DefaultTransport(), creds.TokenSource)
 	if err != nil {
-		fmt.Println("openGCPDBConnectionWithCredentials - error", err)
 		return nil, fmt.Errorf("could not create HTTP client: %w", err)
 	}
-	fmt.Println("openGCPDBConnectionWithCredentials - client works")
 
 	certSource := cloudsql.NewCertSourceWithIAM(client, creds.TokenSource)
 	opener := gcppostgres.URLOpener{CertSource: certSource}
 	dbURL, err := url.Parse(dsn)
 	if err != nil {
-		fmt.Println("openGCPDBConnectionWithCredentials - error2", err)
 		return nil, fmt.Errorf("could not parse connection string: %w", err)
 	}
-	fmt.Println("openGCPDBConnectionWithCredentials - opener works")
 
 	return opener.OpenPostgresURL(ctx, dbURL)
 }
