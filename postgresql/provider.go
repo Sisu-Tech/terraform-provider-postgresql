@@ -288,10 +288,6 @@ func getRDSAuthToken(region string, profile string, role string, username string
 }
 
 func initGoogleCreds() error {
-	if _, err := google.FindDefaultCredentials(context.Background()); err == nil {
-		return nil
-	}
-
 	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS_JSON")
 	if googleCredentialsJson != "" {
 		if _, err := google.CredentialsFromJSON(context.Background(), []byte(googleCredentialsJson)); err == nil {
