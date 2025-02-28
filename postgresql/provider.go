@@ -288,7 +288,9 @@ func getRDSAuthToken(region string, profile string, role string, username string
 }
 
 func initGoogleCreds() error {
+	fmt.Println("Starting")
 	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS_JSON")
+	fmt.Println("rawGoogleCredentials:", googleCredentialsJson)
 	if googleCredentialsJson != "" {
 		if _, err := google.CredentialsFromJSON(context.Background(), []byte(googleCredentialsJson)); err == nil {
 			return nil
@@ -296,6 +298,7 @@ func initGoogleCreds() error {
 	}
 
 	rawGoogleCredentials := os.Getenv("GOOGLE_CREDENTIALS")
+	fmt.Println("rawGoogleCredentials:", rawGoogleCredentials)
 	if rawGoogleCredentials == "" {
 		return nil
 	}
@@ -306,11 +309,14 @@ func initGoogleCreds() error {
 	}
 	defer tmpFile.Close()
 
+	fmt.Println("Temporary file created at:", tmpFile.Name())
+
 	_, err = tmpFile.WriteString(rawGoogleCredentials)
 	if err != nil {
 		return fmt.Errorf("could not write in temporary file: %w", err)
 	}
 
+	fmt.Println("Returning")
 	return os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", tmpFile.Name())
 }
 
