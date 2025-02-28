@@ -388,7 +388,7 @@ func openImpersonatedGCPDBConnection(ctx context.Context, dsn string, targetServ
 
 func openGCPDBConnectionWithCredentials(ctx context.Context, dsn string) (*sql.DB, error) {
 	googleCredentialsJson := os.Getenv("GOOGLE_CREDENTIALS_JSON")
-	creds, err := google.CredentialsFromJSON(ctx, []byte(googleCredentialsJson))
+	creds, err := google.CredentialsFromJSON(ctx, []byte(googleCredentialsJson), "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return nil, fmt.Errorf("could not parse Google credentials JSON: %w", err)
 	}
