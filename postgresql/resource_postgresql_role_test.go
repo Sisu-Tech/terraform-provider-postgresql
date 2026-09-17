@@ -13,6 +13,39 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
+func TestValidateRoleSettings(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings map[string]string
+		wantErr  bool
+	}{
+		{name: "custom setting", settings: map[string]string{"pgaudit.log": "none"}},
+		{name: "invalid setting name", settings: map[string]string{"pgaudit.log; SELECT 1": "none"}, wantErr: true},
+		{name: "dedicated setting", settings: map[string]string{"statement_timeout": "30s"}, wantErr: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateRoleSettings(test.settings)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateRoleSettings() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestReadRoleSettings(t *testing.T) {
+	roleConfig := [][]byte{
+		[]byte("pgaudit.log=none"),
+		[]byte("search_path=public"),
+	}
+	got := readRoleSettings(roleConfig, map[string]string{"pgaudit.log": ""})
+	want := map[string]string{"pgaudit.log": "none"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("readRoleSettings() = %v, want %v", got, want)
+	}
+}
+
 func TestAccPostgresqlRole_Basic(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
@@ -122,6 +155,9 @@ resource "postgresql_role" "update_role" {
   statement_timeout = 30000
   idle_in_transaction_session_timeout = 60000
   assume_role = "${postgresql_role.group_role.name}"
+  settings = {
+    "pgaudit.log" = "none"
+  }
 }
 `
 	resource.Test(t, resource.TestCase{
@@ -167,6 +203,9 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "30000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "60000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", "group_role"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.%", "1"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.pgaudit.log", "none"),
+					testAccCheckRoleSetting("update_role2", "pgaudit.log", "none"),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
 			},
@@ -185,6 +224,8 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "statement_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.%", "0"),
+					testAccCheckRoleSetting("update_role", "pgaudit.log", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
@@ -315,6 +356,36 @@ func testAccCheckRoleCanLogin(t *testing.T, role, password string) resource.Test
 		}
 		if err := db.Ping(); err != nil {
 			return fmt.Errorf("could not connect as role %s: %v", role, err)
+		}
+		return nil
+	}
+}
+
+func testAccCheckRoleSetting(roleName, settingName, expected string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		client := testAccProvider.Meta().(*Client)
+		db, err := client.Connect()
+		if err != nil {
+			return err
+		}
+
+		var actual string
+		err = db.QueryRow(
+			`SELECT COALESCE((
+				SELECT option_value
+				FROM pg_options_to_table(rolconfig)
+				WHERE option_name = $2
+			), '')
+			FROM pg_roles
+			WHERE rolname = $1`,
+			roleName,
+			settingName,
+		).Scan(&actual)
+		if err != nil {
+			return fmt.Errorf("could not read setting %s for role %s: %v", settingName, roleName, err)
+		}
+		if actual != expected {
+			return fmt.Errorf("setting %s for role %s: expected %q, got %q", settingName, roleName, expected, actual)
 		}
 		return nil
 	}
