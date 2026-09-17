@@ -30,12 +30,12 @@ type PGFunctionArg struct {
 func (pgFunction *PGFunction) FromResourceData(d *schema.ResourceData) error {
 
 	if v, ok := d.GetOk(funcSchemaAttr); ok {
-		pgFunction.Schema = v.(string)
+		pgFunction.Schema = normalizeIdentifier(v.(string))
 	} else {
 		pgFunction.Schema = "public"
 	}
 
-	pgFunction.Name = d.Get(funcNameAttr).(string)
+	pgFunction.Name = normalizeIdentifier(d.Get(funcNameAttr).(string))
 	pgFunction.Returns = d.Get(funcReturnsAttr).(string)
 	if v, ok := d.GetOk(funcLanguageAttr); ok {
 		pgFunction.Language = v.(string)
@@ -132,8 +132,8 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 		}
 	}
 
-	pgFunction.Schema = unquoteIdentifier(pgFunctionData["Schema"])
-	pgFunction.Name = unquoteIdentifier(pgFunctionData["Name"])
+	pgFunction.Schema = normalizeIdentifier(pgFunctionData["Schema"])
+	pgFunction.Name = normalizeIdentifier(pgFunctionData["Name"])
 	pgFunction.Returns = pgFunctionData["Returns"]
 	pgFunction.Language = pgFunctionData["Language"]
 	pgFunction.Body = pgFunctionData["Body"]
@@ -154,12 +154,15 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	return nil
 }
 
-func unquoteIdentifier(identifier string) string {
+func normalizeIdentifier(identifier string) string {
 	identifier = strings.TrimSpace(identifier)
-	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
-		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
+	if identifier == "" {
+		return identifier
 	}
-	return identifier
+	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
+		identifier = identifier[1 : len(identifier)-1]
+	}
+	return strings.ReplaceAll(identifier, `""`, `"`)
 }
 
 func (pgFunctionArg *PGFunctionArg) Parse(functionArgDefinition string) error {

@@ -200,6 +200,22 @@ MultiLine Function
 	})
 }
 
+func TestFromResourceDataNormalizesQuotedIdentifiers(t *testing.T) {
+	d := mockFunctionResourceData(t, PGFunction{
+		Schema: "\"user\"",
+		Name:   "\"create_or_update_cron_job\"",
+		Body:   "BEGIN RETURN; END;",
+	})
+
+	var pgFunction PGFunction
+	if err := pgFunction.FromResourceData(d); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "user", pgFunction.Schema)
+	assert.Equal(t, "create_or_update_cron_job", pgFunction.Name)
+}
+
 func TestPGFunctionParseUnquotesIdentifiers(t *testing.T) {
 	var pgFunction PGFunction
 
@@ -266,6 +282,7 @@ func mockFunctionResourceData(t *testing.T, obj PGFunction) *schema.ResourceData
 	// Build the attribute map from ForemanModel
 	attributes := make(map[string]interface{})
 
+	attributes["schema"] = obj.Schema
 	attributes["name"] = obj.Name
 	attributes["returns"] = obj.Returns
 	attributes["language"] = obj.Language
