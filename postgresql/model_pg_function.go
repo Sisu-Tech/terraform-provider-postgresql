@@ -132,8 +132,8 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 		}
 	}
 
-	pgFunction.Schema = pgFunctionData["Schema"]
-	pgFunction.Name = pgFunctionData["Name"]
+	pgFunction.Schema = unquoteIdentifier(pgFunctionData["Schema"])
+	pgFunction.Name = unquoteIdentifier(pgFunctionData["Name"])
 	pgFunction.Returns = pgFunctionData["Returns"]
 	pgFunction.Language = pgFunctionData["Language"]
 	pgFunction.Body = pgFunctionData["Body"]
@@ -152,6 +152,14 @@ func (pgFunction *PGFunction) Parse(functionDefinition string) error {
 	}
 
 	return nil
+}
+
+func unquoteIdentifier(identifier string) string {
+	identifier = strings.TrimSpace(identifier)
+	if len(identifier) >= 2 && identifier[0] == '"' && identifier[len(identifier)-1] == '"' {
+		return strings.ReplaceAll(identifier[1:len(identifier)-1], `""`, `"`)
+	}
+	return identifier
 }
 
 func (pgFunctionArg *PGFunctionArg) Parse(functionArgDefinition string) error {

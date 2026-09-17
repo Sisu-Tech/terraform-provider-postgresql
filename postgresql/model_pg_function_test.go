@@ -200,6 +200,27 @@ MultiLine Function
 	})
 }
 
+func TestPGFunctionParseUnquotesIdentifiers(t *testing.T) {
+	var pgFunction PGFunction
+
+	err := pgFunction.Parse(`
+CREATE OR REPLACE FUNCTION "user"."create_or_update_cron_job"()
+RETURNS void
+LANGUAGE plpgsql
+AS $function$
+BEGIN
+    RETURN;
+END;
+$function$
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, "user", pgFunction.Schema)
+	assert.Equal(t, "create_or_update_cron_job", pgFunction.Name)
+}
+
 func TestPGFunctionArgParseWithDefault(t *testing.T) {
 
 	var functionArgDefinition = `default_null integer DEFAULT NULL::integer`
