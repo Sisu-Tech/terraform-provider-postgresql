@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -35,6 +36,7 @@ const (
 	roleSearchPathAttr                      = "search_path"
 	roleStatementTimeoutAttr                = "statement_timeout"
 	roleAssumeRoleAttr                      = "assume_role"
+	roleSettingsAttr                        = "settings"
 
 	// Deprecated options
 	roleDepEncryptedAttr = "encrypted"
@@ -173,6 +175,12 @@ func resourcePostgreSQLRole() *schema.Resource {
 				Optional:    true,
 				Description: "Role to switch to at login",
 			},
+			roleSettingsAttr: {
+				Type:        schema.TypeMap,
+				Optional:    true,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+				Description: "PostgreSQL runtime parameters to set for this role",
+			},
 		},
 	}
 }
@@ -308,6 +316,10 @@ func resourcePostgreSQLRoleCreate(db *DBConnection, d *schema.ResourceData) erro
 	}
 
 	if err = setAssumeRole(txn, d); err != nil {
+		return err
+	}
+
+	if err = applyRoleSettings(txn, d, nil); err != nil {
 		return err
 	}
 
@@ -457,6 +469,9 @@ func resourcePostgreSQLRoleReadImpl(db *DBConnection, d *schema.ResourceData) er
 	d.Set(roleRolesAttr, pgArrayToSet(roleRoles))
 	d.Set(roleSearchPathAttr, readSearchPath(roleConfig))
 	d.Set(roleAssumeRoleAttr, readAssumeRole(roleConfig))
+	if err := d.Set(roleSettingsAttr, readRoleSettings(roleConfig, roleSettingsFromRaw(d.Get(roleSettingsAttr)))); err != nil {
+		return fmt.Errorf("could not read role settings: %w", err)
+	}
 
 	statementTimeout, err := readStatementTimeout(roleConfig)
 	if err != nil {
@@ -689,11 +704,119 @@ func resourcePostgreSQLRoleUpdate(db *DBConnection, d *schema.ResourceData) erro
 		return err
 	}
 
+	if err = updateRoleSettings(txn, d); err != nil {
+		return err
+	}
+
 	if err = txn.Commit(); err != nil {
 		return fmt.Errorf("could not commit transaction: %w", err)
 	}
 
 	return resourcePostgreSQLRoleReadImpl(db, d)
+}
+
+var roleSettingNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)*$`)
+
+var dedicatedRoleSettings = map[string]struct{}{
+	"idle_in_transaction_session_timeout": {},
+	"role":                                {},
+	"search_path":                         {},
+	"statement_timeout":                   {},
+}
+
+func roleSettingsFromRaw(raw interface{}) map[string]string {
+	settings := make(map[string]string)
+	rawSettings, ok := raw.(map[string]interface{})
+	if !ok {
+		return settings
+	}
+	for name, value := range rawSettings {
+		settings[name] = value.(string)
+	}
+	return settings
+}
+
+func validateRoleSettings(settings map[string]string) error {
+	for name := range settings {
+		if !roleSettingNamePattern.MatchString(name) {
+			return fmt.Errorf("invalid PostgreSQL role setting name %q", name)
+		}
+		if _, dedicated := dedicatedRoleSettings[name]; dedicated {
+			return fmt.Errorf("PostgreSQL role setting %q has a dedicated resource argument", name)
+		}
+	}
+	return nil
+}
+
+func setRoleSetting(txn *sql.Tx, roleName, settingName, value string) error {
+	query := fmt.Sprintf(
+		"ALTER ROLE %s SET %s TO '%s'",
+		pq.QuoteIdentifier(roleName),
+		settingName,
+		pqQuoteLiteral(value),
+	)
+	if _, err := txn.Exec(query); err != nil {
+		return fmt.Errorf("could not set PostgreSQL parameter %q for role %q: %w", settingName, roleName, err)
+	}
+	return nil
+}
+
+func resetRoleSetting(txn *sql.Tx, roleName, settingName string) error {
+	query := fmt.Sprintf("ALTER ROLE %s RESET %s", pq.QuoteIdentifier(roleName), settingName)
+	if _, err := txn.Exec(query); err != nil {
+		return fmt.Errorf("could not reset PostgreSQL parameter %q for role %q: %w", settingName, roleName, err)
+	}
+	return nil
+}
+
+func applyRoleSettings(txn *sql.Tx, d *schema.ResourceData, oldSettings map[string]string) error {
+	newSettings := roleSettingsFromRaw(d.Get(roleSettingsAttr))
+	if err := validateRoleSettings(newSettings); err != nil {
+		return err
+	}
+
+	roleName := d.Get(roleNameAttr).(string)
+	for name := range oldSettings {
+		if _, remains := newSettings[name]; remains {
+			continue
+		}
+		if err := resetRoleSetting(txn, roleName, name); err != nil {
+			return err
+		}
+	}
+	for name, value := range newSettings {
+		oldValue, exists := oldSettings[name]
+		if exists && oldValue == value {
+			continue
+		}
+		if err := setRoleSetting(txn, roleName, name, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func updateRoleSettings(txn *sql.Tx, d *schema.ResourceData) error {
+	if !d.HasChange(roleSettingsAttr) {
+		return nil
+	}
+
+	oldRaw, _ := d.GetChange(roleSettingsAttr)
+	return applyRoleSettings(txn, d, roleSettingsFromRaw(oldRaw))
+}
+
+func readRoleSettings(roleConfig pq.ByteaArray, managedSettings map[string]string) map[string]string {
+	settings := make(map[string]string)
+	for _, rawConfig := range roleConfig {
+		parts := strings.SplitN(string(rawConfig), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if _, managed := managedSettings[parts[0]]; managed {
+			settings[parts[0]] = parts[1]
+		}
+	}
+	return settings
 }
 
 func setRoleName(txn *sql.Tx, d *schema.ResourceData) error {

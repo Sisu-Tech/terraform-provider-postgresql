@@ -91,6 +91,13 @@ resource "postgresql_role" "my_replication_role" {
   due to limitations in the implementation, values cannot contain the substring
   `", "`.
 
+* `settings` - (Optional) A map of PostgreSQL runtime parameters to set for the
+  role with `ALTER ROLE ... SET`. The settings apply to the role in every
+  database. Removing a map entry resets that parameter. Parameters with
+  dedicated resource arguments, such as `search_path`, `statement_timeout`,
+  `idle_in_transaction_session_timeout`, and `role`, must use those arguments
+  instead.
+
 * `valid_until` - (Optional) Defines the date and time after which the role's
   password is no longer valid.  Established connections past this `valid_time`
   will have to be manually terminated.  This value corresponds to a PostgreSQL
