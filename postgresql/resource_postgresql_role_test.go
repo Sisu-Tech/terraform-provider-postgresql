@@ -156,7 +156,7 @@ resource "postgresql_role" "update_role" {
   idle_in_transaction_session_timeout = 60000
   assume_role = "${postgresql_role.group_role.name}"
   settings = {
-    "pgaudit.log" = "none"
+    "application_name" = "terraform-provider-test"
   }
 }
 `
@@ -204,8 +204,8 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "60000"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", "group_role"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.%", "1"),
-					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.pgaudit.log", "none"),
-					testAccCheckRoleSetting("update_role2", "pgaudit.log", "none"),
+					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.application_name", "terraform-provider-test"),
+					testAccCheckRoleSetting("update_role2", "application_name", "terraform-provider-test"),
 					testAccCheckRoleCanLogin(t, "update_role2", "titi"),
 				),
 			},
@@ -225,7 +225,7 @@ resource "postgresql_role" "update_role" {
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "idle_in_transaction_session_timeout", "0"),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "assume_role", ""),
 					resource.TestCheckResourceAttr("postgresql_role.update_role", "settings.%", "0"),
-					testAccCheckRoleSetting("update_role", "pgaudit.log", ""),
+					testAccCheckRoleSetting("update_role", "application_name", ""),
 					testAccCheckRoleCanLogin(t, "update_role", "toto"),
 				),
 			},
